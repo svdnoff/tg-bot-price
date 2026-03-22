@@ -1,8 +1,9 @@
+import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-TOKEN = "ТВОЙ_ТОКЕН_БОТА"
-ALLOWED_USER_ID = 123456789  # твой Telegram ID
+TOKEN = os.environ.get("TOKEN")
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID")) 
 
 async def forward_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Игнорируем всех кроме тебя
