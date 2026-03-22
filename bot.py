@@ -87,6 +87,11 @@ async def new_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Старый прайс очищен. Теперь отправляйте новые сообщения от поставщика."
     )
 
+async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        return
+    await update.message.reply_text(f"Текущий словарь PRICES:\n{PRICES}")
+
 # Обработка любого текстового сообщения от тебя
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -116,6 +121,7 @@ async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("send", send_prices))
+app.add_handler(CommandHandler("test", test_prices))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 app.run_polling()
