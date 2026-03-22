@@ -5,9 +5,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 # ======================= Настройки =======================
 
-TOKEN = os.environ.get("8519012454:AAG6xSS68Q81foxqfij24Fp1D7V52GyhtbsА")
-SECOND_BOT_CHAT_ID = int(os.environ.get("123456789"))  # ID второго бота, которому отправляем прайс
-ALLOWED_USER_ID = int(os.environ.get("866973179"))     # твой ID
+TOKEN = os.environ.get("TOKEN")
+SECOND_BOT_CHAT_ID = int(os.environ.get("SECOND_BOT_CHAT_ID"))  # ID второго бота, которому отправляем прайс
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID"))     # твой ID
 
 # Словарь для хранения прайса в памяти
 PRICES = {}
