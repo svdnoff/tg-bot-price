@@ -1,5 +1,6 @@
 import re
 import json
+import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -116,12 +117,17 @@ async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_document(chat_id=SECOND_BOT_CHAT_ID, document=open("prices.json", "rb"))
     await update.message.reply_text("Прайс отправлен второму боту.")
 
+# Команда для вывода ID чата, из которого пришло сообщение
+async def get_id(update, context):
+    await update.message.reply_text(f"Chat ID: {update.effective_chat.id}")
+
 # ======================= Запуск бота =======================
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("send", send_prices))
 app.add_handler(CommandHandler("test", test_prices))
+app.add_handler(CommandHandler("id", get_id))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 app.run_polling()
