@@ -119,7 +119,10 @@ async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Команда для вывода ID чата, из которого пришло сообщение
 async def get_id(update, context):
-    await update.message.reply_text(f"Chat ID: {update.effective_chat.id}")
+    if update.effective_user.id != ALLOWED_USER_ID:
+        return  # Игнорируем всех кроме разрешенного пользователя
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(f"Chat ID этого чата: {chat_id}")
 
 # ======================= Запуск бота =======================
 
