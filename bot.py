@@ -29,9 +29,10 @@ DEFAULT_KEYS = [
 
 WRITE_MODE = False
 RAW_TEXT = ""
+PRICES_FILE = "prices.json"
 
 # Словарь для хранения прайса в памяти
-PRICES = {}
+PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
 # ======================= Функции =======================
 
 # Функция для добавления наценки
@@ -48,12 +49,17 @@ PRICES = {key: create_empty_model_structure() for key in DEFAULT_KEYS}
 # Функция для парсинга текста поставщика
         
 def parse_supplier_text(text: str):
+    """
+    Парсит текст поставщика и формирует структуру:
+    data[category][model][sim_type][memory] = [список цветов и цен]
+    """
+    from collections import defaultdict
+    import re
+
     data = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
 
     current_category = None
     current_model = None
-
-    regions_pattern = "|".join(map(re.escape, SIM_MAP.keys()))
 
     # Приводим ключи категорий к нижнему регистру для сравнения
     lowercase_keys = [k.lower() for k in DEFAULT_KEYS]
@@ -63,10 +69,10 @@ def parse_supplier_text(text: str):
         if not line:
             continue
 
-        # ---------- КАТЕГОРИИ ----------
-        # ищем строку, которая совпадает с ключом категории
         lower_line = line.lower()
         matched_key = None
+
+        # ---------- КАТЕГОРИИ ----------
         for key in lowercase_keys:
             if lower_line.startswith(key):
                 matched_key = key
@@ -77,7 +83,7 @@ def parse_supplier_text(text: str):
             continue
 
         # ---------- МОДЕЛЬ ----------
-        # новая модель считается любой строкой после категории, которая не содержит тире
+        # любая строка после категории, которая не содержит тире
         if current_category and "–" not in line:
             current_model = line
             continue
@@ -86,22 +92,15 @@ def parse_supplier_text(text: str):
             continue  # пока нет модели — пропускаем строки
 
         # ---------- строки с ценами ----------
-        match = re.search(
-            rf'({regions_pattern})?\s*(.+?)\s[-–]\s?([\d\.]+)',
-            line
-        )
+        match = re.search(r'(.+?)\s[-–]\s?([\d\.]+)', line)
         if not match:
             continue
 
-        region = match.group(1)
-        spec = match.group(2)
-        price = match.group(3)
+        spec = match.group(1)
+        price = match.group(2)
 
-        # SIM тип
-        if region and region in SIM_MAP:
-            sim_type = SIM_MAP[region]
-        else:
-            sim_type = "Обычная версия"
+        # SIM тип: по дефолту "Обычная версия"
+        sim_type = "Обычная версия"
 
         # память (iPhone/Samsung)
         mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b|\d/\d{3,4})', spec)
@@ -112,32 +111,26 @@ def parse_supplier_text(text: str):
             memory = "Стандарт"
             color = spec
 
+        # категория и модель
         category = current_category or "Разное"
         model = current_model
 
-        data[category][model][sim_type][memory].append(
-            f"{color} – {price}₽"
-        )
+        # добавляем в словарь
+        data[category][model][sim_type][memory].append(f"{color} – {price}₽")
 
     # ---------- сборка текста ----------
     formatted = {}
-
     for category in data:
         for model in data[category]:
             text_out = f"{model}:\n\n"
-
             for sim_type in data[category][model]:
                 if sim_type != "Обычная версия":
                     text_out += f"{sim_type}:\n\n"
-
                 for memory in data[category][model][sim_type]:
                     text_out += f"{memory}:\n"
-
                     for line in data[category][model][sim_type][memory]:
                         text_out += f"{line}\n"
-
                     text_out += "\n"
-
             formatted[f"{category.lower()} {model.lower()}"] = text_out.strip()
 
     return formatted
@@ -178,32 +171,6 @@ async def go(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # /send — сохраняем JSON и отправляем второму боту
-async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ALLOWED_USER_ID:
-        return
-
-    global WRITE_MODE, RAW_TEXT, PRICES
-
-    WRITE_MODE = False
-
-    parsed = parse_supplier_text(RAW_TEXT)
-
-    if not parsed:
-        await update.message.reply_text("Прайс пустой")
-        return
-
-    PRICES.update(parsed)
-
-    with open("prices.json", "w", encoding="utf-8") as f:
-        json.dump(PRICES, f, ensure_ascii=False, indent=2)
-
-    await context.bot.send_document(
-        chat_id=SECOND_BOT_CHAT_ID,
-        document=open("prices.json", "rb")
-    )
-
-    await update.message.reply_text("Прайс отправлен второму боту.")
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -214,8 +181,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Сначала введите /go")
         return
 
+    # Добавляем текст к общему RAW_TEXT
     RAW_TEXT += "\n" + update.message.text
-    await update.message.reply_text("Добавлено")
+
+    # Парсим текущий текст
+    parsed = parse_supplier_text(update.message.text)
+
+    # Загружаем текущий прайс из файла
+    try:
+        with open(PRICES_FILE, "r", encoding="utf-8") as f:
+            prices = json.load(f)
+    except FileNotFoundError:
+        prices = {}
+
+    # Обновляем словарь
+    prices.update(parsed)
+
+    # Сохраняем сразу в файл
+    with open(PRICES_FILE, "w", encoding="utf-8") as f:
+        json.dump(prices, f, ensure_ascii=False, indent=2)
+
+    await update.message.reply_text("Добавлено и сохранено в прайс.")
+
+
+async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        return
+
+    global WRITE_MODE, RAW_TEXT
+
+    WRITE_MODE = False  # закрываем запись
+
+    # Проверяем файл
+    try:
+        with open(PRICES_FILE, "rb") as f:
+            await context.bot.send_document(
+                chat_id=SECOND_BOT_CHAT_ID,
+                document=f
+            )
+        await update.message.reply_text("Прайс отправлен второму боту.")
+    except FileNotFoundError:
+        await update.message.reply_text("Прайс пустой, нечего отправлять.")
 
 # Команда для вывода ID чата, из которого пришло сообщение
 async def get_id(update, context):
