@@ -178,6 +178,19 @@ async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Прайс отправлен второму боту.")
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        return
+
+    global WRITE_MODE, RAW_TEXT
+
+    if not WRITE_MODE:
+        await update.message.reply_text("Сначала введите /go")
+        return
+
+    RAW_TEXT += "\n" + update.message.text
+    await update.message.reply_text("Добавлено")
+
 # Команда для вывода ID чата, из которого пришло сообщение
 async def get_id(update, context):
     if update.effective_user.id != ALLOWED_USER_ID:
