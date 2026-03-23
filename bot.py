@@ -154,24 +154,27 @@ async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Обработка любого текстового сообщения от тебя
 async def go(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Включаем режим записи прайса"""
     if update.effective_user.id != ALLOWED_USER_ID:
         return
 
-    global WRITE_MODE, RAW_TEXT, PRICES
+    global WRITE_MODE, RAW_TEXT
 
     WRITE_MODE = True
-    RAW_TEXT = ""
-    PRICES = {}
+    RAW_TEXT = ""  # очищаем прошлый текст
 
-    with open("prices.json", "w", encoding="utf-8") as f:
+    # очищаем файл сразу
+    with open(PRICES_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
 
     await update.message.reply_text(
         "Бот готов к записи.\nОтправляйте сообщения поставщика."
     )
 
+
 # /send — сохраняем JSON и отправляем второму боту
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Добавляем сообщение в общий RAW_TEXT и обновляем JSON"""
     if update.effective_user.id != ALLOWED_USER_ID:
         return
 
@@ -181,38 +184,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Сначала введите /go")
         return
 
-    # Добавляем текст к общему RAW_TEXT
+    # добавляем текст к общему RAW_TEXT
     RAW_TEXT += "\n" + update.message.text
 
-    # Парсим текущий текст
-    parsed = parse_supplier_text(update.message.text)
+    # парсим **весь накопленный текст**
+    parsed = parse_supplier_text(RAW_TEXT)
 
-    # Загружаем текущий прайс из файла
-    try:
-        with open(PRICES_FILE, "r", encoding="utf-8") as f:
-            prices = json.load(f)
-    except FileNotFoundError:
-        prices = {}
-
-    # Обновляем словарь
-    prices.update(parsed)
-
-    # Сохраняем сразу в файл
+    # обновляем файл
     with open(PRICES_FILE, "w", encoding="utf-8") as f:
-        json.dump(prices, f, ensure_ascii=False, indent=2)
+        json.dump(parsed, f, ensure_ascii=False, indent=2)
 
     await update.message.reply_text("Добавлено и сохранено в прайс.")
 
 
 async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляем текущий прайс второму боту"""
     if update.effective_user.id != ALLOWED_USER_ID:
         return
 
-    global WRITE_MODE, RAW_TEXT
+    global WRITE_MODE
 
     WRITE_MODE = False  # закрываем запись
 
-    # Проверяем файл
     try:
         with open(PRICES_FILE, "rb") as f:
             await context.bot.send_document(
