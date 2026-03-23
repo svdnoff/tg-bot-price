@@ -31,12 +31,19 @@ PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
 
 # ==================== Функции ====================
 
+def add_margin(price: int) -> int:
+    """Добавляет наценку 5000₽ к цене."""
+    return price + 5000
+
 def parse_supplier_text(text: str):
     """
     Парсит текст поставщика в формате твоего примера
     и возвращает словарь:
     PRICES[category][sim_type][memory] = [список цветов + цен]
     """
+    from collections import defaultdict
+    import re
+
     data = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
 
     # Для каждого ключа ищем все блоки в тексте
@@ -61,11 +68,15 @@ def parse_supplier_text(text: str):
                 model_name = pm.group(2).strip()
                 memory = pm.group(3)
                 color = pm.group(4).strip()
-                price = pm.group(5)
+                price_str = pm.group(5)
+
+                # конвертируем цену в int и добавляем наценку
+                price_int = int(price_str.replace(".", ""))
+                price_int = add_margin(price_int)
 
                 sim_type = SIM_MAP.get(region_flag, "Обычная версия")
 
-                data[key][sim_type][memory].append(f"{color} – {price}₽")
+                data[key][sim_type][memory].append(f"{color} – {price_int}₽")
 
     return data
 
