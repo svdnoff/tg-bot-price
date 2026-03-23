@@ -28,59 +28,50 @@ PRICES_FILE = "prices.json"
 PRICE_INCREASE = 5000
 WRITE_MODE = False
 
-# Словарь для хранения прайса в памяти
 PRICES = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
 
 # -------------------- Функции --------------------
 def add_margin(price: int) -> int:
-    """Добавляет наценку PRICE_INCREASE к цене."""
     return price + PRICE_INCREASE
 
 def parse_supplier_text(text: str):
     """
-    Универсальный парсер для прайса.
+    Универсальный построчный парсер для iPhone, Samsung, PS5.
     Возвращает словарь:
-    data[category][model][sim_type][memory] = [список цветов + цен]
+    data[category][model][sim_type][memory] = [цвет – цена]
     """
     data = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
 
-    # Разделяем текст на блоки по категориям (iPhone, PS5, GamePad)
-    category_pattern = re.compile(r"(?:📱|🎮)\s*([\w\s\d]+)", re.IGNORECASE)
-    matches = list(category_pattern.finditer(text))
-
-    for i, m in enumerate(matches):
-        cat_name = m.group(1).strip().lower()
-        if cat_name not in DEFAULT_KEYS:
+    lines = text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line or "Заказать" in line:
             continue
 
-        start = m.end()
-        end = matches[i+1].start() if i+1 < len(matches) else len(text)
-        block = text[start:end]
-
-        # Универсальный паттерн для строк с ценой
-        line_pattern = re.compile(
-            r"([🇪🇺🇯🇵🇨🇳]?)\s*"       # флаг (опционально)
-            r"([A-Za-z\d\s+]+?)"        # модель (например 16e, 16 Plus)
-            r"(?:\s+(\d+(?:GB|TB)?))?"  # память (опционально)
-            r"\s+([^\-–\n]+?)"          # цвет/вариант
-            r"\s*[-–]\s*([\d\.,]+)",    # цена
-            re.UNICODE
+        # паттерн: флаг (опционально), модель/подмодель, память (опционально), цвет/вариант, цена
+        m = re.match(
+            r"([🇪🇺🇯🇵🇨🇳]?)\s*"          # флаг
+            r"([A-Za-z\d\s+]+?)"           # модель / подмодель
+            r"(?:\s+(\d+(?:GB|TB)?))?"     # память (опционально)
+            r"\s+([^\-–\n]+?)"             # цвет / вариант
+            r"\s*[-–]\s*([\d\.,]+)",       # цена
+            line
         )
+        if not m:
+            continue
 
-        for pm in line_pattern.finditer(block):
-            region_flag = pm.group(1).strip()
-            model_name = pm.group(2).strip().lower()
-            memory = pm.group(3) if pm.group(3) else "Стандарт"
-            color = pm.group(4).strip()
-            price_int = add_margin(int(pm.group(5).replace(",", "").replace(".", "")))
-            try:
-                price_int = add_margin(int(price_str))
-            except ValueError:
-                continue  # пропускаем некорректные строки
+        flag, model_name, memory, variant, price_str = m.groups()
+        model_name = model_name.strip().lower()
+        memory = memory if memory else "Стандарт"
+        price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
+        sim_type = SIM_MAP.get(flag, "Обычная версия")
 
-            sim_type = SIM_MAP.get(region_flag, "Обычная версия")
+        # определяем категорию по DEFAULT_KEYS
+        category = next((k for k in DEFAULT_KEYS if model_name in k.lower()), None)
+        if not category:
+            continue
 
-            data[cat_name][model_name][sim_type][memory].append(f"{color} – {price_int}₽")
+        data[category][model_name][sim_type][memory].append(f"{variant.strip()} – {price_int}₽")
 
     return data
 
@@ -112,7 +103,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     parsed = parse_supplier_text(text)
 
-    # Объединяем с текущим прайсом
+    # объединяем с текущим прайсом
     for key in parsed:
         for model_name in parsed[key]:
             for sim_type in parsed[key][model_name]:
@@ -121,7 +112,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parsed[key][model_name][sim_type][memory]
                     )
 
-    # Сохраняем в файл
+    # сохраняем в файл
     with open(PRICES_FILE, "w", encoding="utf-8") as f:
         json.dump(PRICES, f, ensure_ascii=False, indent=2)
 
