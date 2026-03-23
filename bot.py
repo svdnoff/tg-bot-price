@@ -27,12 +27,7 @@ PRICES = {}
 
 # Функция для добавления наценки
 def add_margin(price: int) -> int:
-    if price <= 60000:
-        return price + 5000
-    elif price <= 80000:
-        return price + 6000
-    else:
-        return price + 7000
+    return price + 5000
 
 # Функция для парсинга текста поставщика
 def parse_supplier_text(text: str):
@@ -166,7 +161,7 @@ async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Прайс пустой")
         return
 
-    PRICES = parsed
+    PRICES.update(parsed)
 
     with open("prices.json", "w", encoding="utf-8") as f:
         json.dump(PRICES, f, ensure_ascii=False, indent=2)
