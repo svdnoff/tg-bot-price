@@ -4,6 +4,8 @@ import os
 from collections import defaultdict
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from collections import defaultdict
+import copy
 
 # ======================= Настройки =======================
 
@@ -17,6 +19,13 @@ SIM_MAP = {
     "🇯🇵": "Только eSIM, без физической!",
     "🇨🇳": "2 SIM (физические)",
 }
+DEFAULT_KEYS = [
+    "iphone 16e", "iphone 16", "iphone 16 plus",
+    "iphone 16 pro", "iphone 16 pro max",
+    "iphone 17 pro", "iphone 17 pro max",
+    "samsung s25", "samsung s25 ultra", "samsung s26 ultra",
+    "ps5 slim", "ps5 pro", "gamepad ps5"
+]
 
 WRITE_MODE = False
 RAW_TEXT = ""
@@ -29,6 +38,13 @@ PRICES = {}
 def add_margin(price: int) -> int:
     return price + 5000
 
+# функция для создания пустой структуры по ключу
+def create_empty_model_structure():
+    return defaultdict(lambda: defaultdict(list))  # sim_type -> memory -> список цветов
+
+# создаём словарь с дефолтными ключами
+PRICES = {key: create_empty_model_structure() for key in DEFAULT_KEYS}
+
 # Функция для парсинга текста поставщика
         
 def parse_supplier_text(text: str):
@@ -39,27 +55,41 @@ def parse_supplier_text(text: str):
 
     regions_pattern = "|".join(map(re.escape, SIM_MAP.keys()))
 
+    # Приводим ключи категорий к нижнему регистру для сравнения
+    lowercase_keys = [k.lower() for k in DEFAULT_KEYS]
+
     for line in text.split("\n"):
         line = line.strip()
         if not line:
             continue
 
         # ---------- КАТЕГОРИИ ----------
-        if line.startswith(("📱", "🤖", "🎮")) and "–" not in line:
-            current_category = line.replace("📱", "").replace("🤖", "").replace("🎮", "").strip()
+        # ищем строку, которая совпадает с ключом категории
+        lower_line = line.lower()
+        matched_key = None
+        for key in lowercase_keys:
+            if lower_line.startswith(key):
+                matched_key = key
+                break
+        if matched_key:
+            current_category = matched_key.title()  # Красиво с заглавной буквы
+            current_model = None
             continue
 
-        # ---------- IPHONE MODEL ----------
-        if line.startswith("📱"):
-            current_model = line.replace("📱", "").strip()
+        # ---------- МОДЕЛЬ ----------
+        # новая модель считается любой строкой после категории, которая не содержит тире
+        if current_category and "–" not in line:
+            current_model = line
             continue
+
+        if not current_model:
+            continue  # пока нет модели — пропускаем строки
 
         # ---------- строки с ценами ----------
         match = re.search(
             rf'({regions_pattern})?\s*(.+?)\s[-–]\s?([\d\.]+)',
             line
         )
-
         if not match:
             continue
 
@@ -73,13 +103,8 @@ def parse_supplier_text(text: str):
         else:
             sim_type = "Обычная версия"
 
-        # память (iPhone)
-        mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b)', spec)
-
-        # samsung формат 12/256
-        if not mem_match:
-            mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b)', spec)
-
+        # память (iPhone/Samsung)
+        mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b|\d/\d{3,4})', spec)
         if mem_match:
             memory = mem_match.group(1)
             color = spec.split(memory)[-1].strip()
@@ -88,7 +113,7 @@ def parse_supplier_text(text: str):
             color = spec
 
         category = current_category or "Разное"
-        model = spec.split()[0]
+        model = current_model
 
         data[category][model][sim_type][memory].append(
             f"{color} – {price}₽"
@@ -99,11 +124,9 @@ def parse_supplier_text(text: str):
 
     for category in data:
         for model in data[category]:
-
             text_out = f"{model}:\n\n"
 
             for sim_type in data[category][model]:
-
                 if sim_type != "Обычная версия":
                     text_out += f"{sim_type}:\n\n"
 
