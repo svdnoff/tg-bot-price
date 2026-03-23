@@ -36,8 +36,7 @@ def add_margin(price: int) -> int:
 
 def parse_supplier_text(text: str):
     """
-    Универсальный построчный парсер для iPhone, Samsung, PS5.
-    Возвращает словарь:
+    Построчный универсальный парсер.
     data[category][model][sim_type][memory] = [цвет – цена]
     """
     data = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
@@ -45,16 +44,16 @@ def parse_supplier_text(text: str):
     lines = text.splitlines()
     for line in lines:
         line = line.strip()
-        if not line or "Заказать" in line:
+        if not line or line.startswith("📱") or line.startswith("🎮") or "Заказать" in line:
             continue
 
-        # паттерн: флаг (опционально), модель/подмодель, память (опционально), цвет/вариант, цена
+        # паттерн: флаг (опционально), модель (iPhone/Samsung/PS5), память (опционально), цвет, цена
         m = re.match(
-            r"([🇪🇺🇯🇵🇨🇳]?)\s*"          # флаг
-            r"([A-Za-z\d\s+]+?)"           # модель / подмодель
-            r"(?:\s+(\d+(?:GB|TB)?))?"     # память (опционально)
-            r"\s+([^\-–\n]+?)"             # цвет / вариант
-            r"\s*[-–]\s*([\d\.,]+)",       # цена
+            r"([🇪🇺🇯🇵🇨🇳]?)\s*"        # флаг
+            r"([\w\s\d+]+?)\s*"          # модель / подмодель
+            r"(\d+(?:GB|TB)?)?\s*"       # память (опционально)
+            r"([^\-–]+?)\s*[-–]\s*"      # цвет / вариант
+            r"([\d\.,]+)",               # цена
             line
         )
         if not m:
@@ -66,10 +65,20 @@ def parse_supplier_text(text: str):
         price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
         sim_type = SIM_MAP.get(flag, "Обычная версия")
 
-        # определяем категорию по DEFAULT_KEYS
-        category = next((k for k in DEFAULT_KEYS if model_name in k.lower()), None)
+        # Категорию ищем через вхождение модели в DEFAULT_KEYS
+        category = None
+        for key in DEFAULT_KEYS:
+            if key in model_name:
+                category = key
+                break
+        # если не нашли через вхождение, пробуем искать по первой цифре (iPhone 16/17, Samsung 25/26)
         if not category:
-            continue
+            for key in DEFAULT_KEYS:
+                if key.split()[0] in model_name:
+                    category = key
+                    break
+        if not category:
+            continue  # не нашли категорию — пропускаем
 
         data[category][model_name][sim_type][memory].append(f"{variant.strip()} – {price_int}₽")
 
