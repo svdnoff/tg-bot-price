@@ -30,13 +30,13 @@ def add_margin(price: int) -> int:
     return price + 5000
 
 # Функция для парсинга текста поставщика
+        
 def parse_supplier_text(text: str):
-    result = {}
+    data = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
+
+    current_category = None
     current_model = None
 
-    data = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-
-    # динамически собираем regex стран
     regions_pattern = "|".join(map(re.escape, SIM_MAP.keys()))
 
     for line in text.split("\n"):
@@ -44,14 +44,22 @@ def parse_supplier_text(text: str):
         if not line:
             continue
 
+        # ---------- КАТЕГОРИИ ----------
+        if line.startswith(("📱", "🤖", "🎮")) and "–" not in line:
+            current_category = line.replace("📱", "").replace("🤖", "").replace("🎮", "").strip()
+            continue
+
+        # ---------- IPHONE MODEL ----------
         if line.startswith("📱"):
             current_model = line.replace("📱", "").strip()
             continue
 
-        if not current_model:
-            continue
+        # ---------- строки с ценами ----------
+        match = re.search(
+            rf'({regions_pattern})?\s*(.+?)\s[-–]\s?([\d\.]+)',
+            line
+        )
 
-        match = re.search(rf'({regions_pattern})\s(.+?)\s–\s([\d\.]+)₽', line)
         if not match:
             continue
 
@@ -59,38 +67,55 @@ def parse_supplier_text(text: str):
         spec = match.group(2)
         price = match.group(3)
 
-        sim_type = SIM_MAP.get(region)
-        if not sim_type:
-            continue
+        # SIM тип
+        if region and region in SIM_MAP:
+            sim_type = SIM_MAP[region]
+        else:
+            sim_type = "Обычная версия"
 
-        mem_match = re.search(r'(\d{3,4}GB|\dTB)', spec)
+        # память (iPhone)
+        mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b)', spec)
+
+        # samsung формат 12/256
         if not mem_match:
-            continue
+            mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b)', spec)
 
-        memory = mem_match.group(1)
-        color = spec.split(memory)[-1].strip()
+        if mem_match:
+            memory = mem_match.group(1)
+            color = spec.split(memory)[-1].strip()
+        else:
+            memory = "Стандарт"
+            color = spec
 
-        data[current_model][sim_type][memory].append(
+        category = current_category or "Разное"
+        model = spec.split()[0]
+
+        data[category][model][sim_type][memory].append(
             f"{color} – {price}₽"
         )
 
+    # ---------- сборка текста ----------
     formatted = {}
 
-    for model in data:
-        text_out = f"📱 {model}:\n\n"
+    for category in data:
+        for model in data[category]:
 
-        for sim_type in data[model]:
-            text_out += f"{sim_type}:\n\n"
+            text_out = f"{model}:\n\n"
 
-            for memory in data[model][sim_type]:
-                text_out += f"{memory}:\n"
+            for sim_type in data[category][model]:
 
-                for line in data[model][sim_type][memory]:
-                    text_out += f"{line}\n"
+                if sim_type != "Обычная версия":
+                    text_out += f"{sim_type}:\n\n"
 
-                text_out += "\n"
+                for memory in data[category][model][sim_type]:
+                    text_out += f"{memory}:\n"
 
-        formatted[model.lower()] = text_out.strip()
+                    for line in data[category][model][sim_type][memory]:
+                        text_out += f"{line}\n"
+
+                    text_out += "\n"
+
+            formatted[f"{category.lower()} {model.lower()}"] = text_out.strip()
 
     return formatted
 
@@ -105,23 +130,6 @@ async def new_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Старый прайс очищен. Теперь отправляйте новые сообщения от поставщика."
     )
-
-async def go(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ALLOWED_USER_ID:
-        return
-
-    global WRITE_MODE, RAW_TEXT, PRICES
-
-    WRITE_MODE = True
-    RAW_TEXT = ""
-    PRICES = {}
-
-    with open("prices.json", "w", encoding="utf-8") as f:
-        json.dump({}, f)
-
-    await update.message.reply_text(
-        "Бот готов к записи.\nОтправляйте сообщения поставщика."
-    )    
 
 async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
