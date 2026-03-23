@@ -36,24 +36,23 @@ def add_margin(price: int) -> int:
 
 def parse_supplier_text(text: str):
     """
-    Построчный универсальный парсер.
-    data[category][model][sim_type][memory] = [цвет – цена]
+    Универсальный построчный парсер прайса.
+    Возвращает data[category][model][sim_type][memory] = [цвет – цена]
     """
     data = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
 
-    lines = text.splitlines()
-    for line in lines:
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("📱") or line.startswith("🎮") or "Заказать" in line:
             continue
 
-        # паттерн: флаг (опционально), модель (iPhone/Samsung/PS5), память (опционально), цвет, цена
+        # Паттерн: флаг (опционально), модель, память (опционально), цвет, цена
         m = re.match(
-            r"([🇪🇺🇯🇵🇨🇳]?)\s*"        # флаг
-            r"([\w\s\d+]+?)\s*"          # модель / подмодель
-            r"(\d+(?:GB|TB)?)?\s*"       # память (опционально)
-            r"([^\-–]+?)\s*[-–]\s*"      # цвет / вариант
-            r"([\d\.,]+)",               # цена
+            r"([🇪🇺🇯🇵🇨🇳]?)\s*"      # флаг
+            r"([A-Za-z\d\s+]+?)\s*"    # модель / подмодель
+            r"(\d+(?:GB|TB)?)?\s*"     # память (опционально)
+            r"([^\-–]+?)\s*[-–]\s*"    # цвет/вариант
+            r"([\d\.,]+)",             # цена
             line
         )
         if not m:
@@ -62,25 +61,31 @@ def parse_supplier_text(text: str):
         flag, model_name, memory, variant, price_str = m.groups()
         model_name = model_name.strip().lower()
         memory = memory if memory else "Стандарт"
-        price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
+        variant = variant.strip()
+        try:
+            price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
+        except ValueError:
+            continue  # некорректная цена
+
         sim_type = SIM_MAP.get(flag, "Обычная версия")
 
-        # Категорию ищем через вхождение модели в DEFAULT_KEYS
+        # Определяем категорию через DEFAULT_KEYS
         category = None
         for key in DEFAULT_KEYS:
             if key in model_name:
                 category = key
                 break
-        # если не нашли через вхождение, пробуем искать по первой цифре (iPhone 16/17, Samsung 25/26)
         if not category:
+            # Попробуем по первой цифре и ключевому слову
             for key in DEFAULT_KEYS:
                 if key.split()[0] in model_name:
                     category = key
                     break
         if not category:
-            continue  # не нашли категорию — пропускаем
+            continue  # не удалось определить категорию
 
-        data[category][model_name][sim_type][memory].append(f"{variant.strip()} – {price_int}₽")
+        # Добавляем в словарь
+        data[category][model_name][sim_type][memory].append(f"{variant} – {price_int}₽")
 
     return data
 
