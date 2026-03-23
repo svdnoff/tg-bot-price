@@ -49,20 +49,15 @@ PRICES = {key: create_empty_model_structure() for key in DEFAULT_KEYS}
 # Функция для парсинга текста поставщика
         
 def parse_supplier_text(text: str):
-    """
-    Парсит текст поставщика и формирует структуру:
-    data[category][model][sim_type][memory] = [список цветов и цен]
-    """
     from collections import defaultdict
     import re
 
     data = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
 
-    current_category = None
-    current_model = None
-
     # Приводим ключи категорий к нижнему регистру для сравнения
     lowercase_keys = [k.lower() for k in DEFAULT_KEYS]
+
+    current_category = None
 
     for line in text.split("\n"):
         line = line.strip()
@@ -70,53 +65,43 @@ def parse_supplier_text(text: str):
             continue
 
         lower_line = line.lower()
-        matched_key = None
 
-        # ---------- КАТЕГОРИИ ----------
+        # ---------- КАТЕГОРИИ ----------  
         for key in lowercase_keys:
             if lower_line.startswith(key):
-                matched_key = key
+                current_category = key  # ключ из DEFAULT_KEYS
                 break
-        if matched_key:
-            current_category = matched_key.title()  # Красиво с заглавной буквы
-            current_model = None
-            continue
 
-        # ---------- МОДЕЛЬ ----------
-        # любая строка после категории, которая не содержит тире
-        if current_category and "–" not in line:
-            current_model = line
-            continue
+        # Если это строка с ценой
+        price_match = re.search(r'(.+?)\s[-–]\s?([\d\.]+)', line)
+        if price_match and current_category:
 
-        if not current_model:
-            continue  # пока нет модели — пропускаем строки
+            spec = price_match.group(1).strip()
+            price = price_match.group(2).strip()
 
-        # ---------- строки с ценами ----------
-        match = re.search(r'(.+?)\s[-–]\s?([\d\.]+)', line)
-        if not match:
-            continue
+            # определяем регион (если есть)
+            region = None
+            for reg_emoji in SIM_MAP.keys():
+                if spec.startswith(reg_emoji):
+                    region = reg_emoji
+                    spec = spec.replace(reg_emoji, "").strip()
+                    break
 
-        spec = match.group(1)
-        price = match.group(2)
+            sim_type = SIM_MAP.get(region, "Обычная версия")
 
-        # SIM тип: по дефолту "Обычная версия"
-        sim_type = "Обычная версия"
+            # память
+            mem_match = re.search(r'(\d{3,4}GB|\dTB|\d/\d{3,4}|\b\d{3}\b)', spec)
+            if mem_match:
+                memory = mem_match.group(1)
+                color = spec.replace(memory, "").strip()
+            else:
+                memory = "Стандарт"
+                color = spec
 
-        # память (iPhone/Samsung)
-        mem_match = re.search(r'(\d{3,4}GB|\dTB|\b\d{3}\b|\d/\d{3,4})', spec)
-        if mem_match:
-            memory = mem_match.group(1)
-            color = spec.split(memory)[-1].strip()
-        else:
-            memory = "Стандарт"
-            color = spec
+            # модель = ключ категории
+            model = current_category
 
-        # категория и модель
-        category = current_category or "Разное"
-        model = current_model
-
-        # добавляем в словарь
-        data[category][model][sim_type][memory].append(f"{color} – {price}₽")
+            data[current_category][model][sim_type][memory].append(f"{color} – {price}₽")
 
     # ---------- сборка текста ----------
     formatted = {}
