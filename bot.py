@@ -25,6 +25,7 @@ DEFAULT_KEYS = [
 
 WRITE_MODE = False
 PRICES_FILE = "prices.json"
+PRICE_INCREASE = 5000 
 
 # Словарь для хранения прайса в памяти
 PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
@@ -32,54 +33,51 @@ PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
 # ==================== Функции ====================
 
 def add_margin(price: int) -> int:
-    """Добавляет наценку 5000₽ к цене."""
-    return price + 5000
+    """Добавляет наценку PRICE_INCREASE к цене."""
+    return price + PRICE_INCREASE
 
 def parse_supplier_text(text: str):
     """
-    Парсит текст поставщика в формате твоего примера
-    и возвращает словарь:
-    PRICES[category][sim_type][memory] = [список цветов + цен]
+    Универсальный парсер для прайса.
+    Возвращает словарь:
+    data[category][model][sim_type][memory] = [список цветов + цен]
     """
-    from collections import defaultdict
-    import re
-
     data = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
 
-    # Для каждого ключа ищем все блоки в тексте
-    for key in DEFAULT_KEYS:
-        pattern = re.compile(rf'📱\s*({re.escape(key)})', re.IGNORECASE)
-        matches = list(pattern.finditer(text))
-        if not matches:
-            continue
+    # Разделяем текст на блоки по категориям
+    category_pattern = re.compile(r"(?:📱|🎮)\s*([\w\s\d]+)", re.IGNORECASE)
+    blocks = category_pattern.finditer(text)
 
-        # Если нашли категорию, берём текст после неё до следующей категории
-        for i, m in enumerate(matches):
-            start = m.end()
-            end = matches[i+1].start() if i+1 < len(matches) else len(text)
-            block = text[start:end]
+    for m in blocks:
+        cat_name = m.group(1).strip().lower()  # категория в нижний регистр
+        if cat_name not in DEFAULT_KEYS:
+            continue  # пропускаем несуществующие ключи
 
-            # Ищем все строки с ценами в этом блоке
-            price_pattern = re.compile(
-                r'([🇪🇺🇯🇵🇨🇳]+)\s+([\w\s+/]+)\s+(\d+(?:GB|TB))\s+([^\–]+?)\s*[-–]\s*([\d\.]+)'
-            )
-            for pm in price_pattern.finditer(block):
-                region_flag = pm.group(1)
-                model_name = pm.group(2).strip()
-                memory = pm.group(3)
-                color = pm.group(4).strip()
-                price_str = pm.group(5)
+        start = m.end()
+        # конец блока — либо до следующей категории, либо конец текста
+        next_m = next(category_pattern.finditer(text, start), None)
+        end = next_m.start() if next_m else len(text)
+        block = text[start:end]
 
-                # конвертируем цену в int и добавляем наценку
-                price_int = int(price_str.replace(".", ""))
-                price_int = add_margin(price_int)
+        # Общий паттерн для всех форматов
+        line_pattern = re.compile(
+            r"([🇪🇺🇯🇵🇨🇳]*)\s*([\w\s+/]+?)\s*(\d+(?:GB|TB)?)?\s*([^\–\-\n]+?)\s*[-–]\s*([\d\.,]+)",
+            re.UNICODE
+        )
 
-                sim_type = SIM_MAP.get(region_flag, "Обычная версия")
+        for pm in line_pattern.finditer(block):
+            region_flag = pm.group(1).strip()
+            model_name = pm.group(2).strip().lower()
+            memory = pm.group(3) if pm.group(3) else "Стандарт"
+            color = pm.group(4).strip()
+            price_str = pm.group(5).replace(",", "").replace(".", "")
+            price_int = add_margin(int(price_str))
 
-                data[key][sim_type][memory].append(f"{color} – {price_int}₽")
+            sim_type = SIM_MAP.get(region_flag, "Обычная версия")
+
+            data[cat_name][model_name][sim_type][memory].append(f"{color} – {price_int}₽")
 
     return data
-
 # ==================== Хендлеры ====================
 
 async def new_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
