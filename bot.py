@@ -5,6 +5,7 @@ from collections import defaultdict
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+# -------------------- Настройки --------------------
 TOKEN = os.environ.get("TOKEN")
 SECOND_BOT_CHAT_ID = int(os.environ.get("SECOND_BOT_CHAT_ID"))
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID"))
@@ -23,15 +24,14 @@ DEFAULT_KEYS = [
     "ps5 slim", "ps5 pro", "gamepad ps5"
 ]
 
-WRITE_MODE = False
 PRICES_FILE = "prices.json"
-PRICE_INCREASE = 5000 
+PRICE_INCREASE = 5000
+WRITE_MODE = False
 
 # Словарь для хранения прайса в памяти
-PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
+PRICES = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
 
-# ==================== Функции ====================
-
+# -------------------- Функции --------------------
 def add_margin(price: int) -> int:
     """Добавляет наценку PRICE_INCREASE к цене."""
     return price + PRICE_INCREASE
@@ -42,26 +42,24 @@ def parse_supplier_text(text: str):
     Возвращает словарь:
     data[category][model][sim_type][memory] = [список цветов + цен]
     """
-    data = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
+    data = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
 
-    # Разделяем текст на блоки по категориям
+    # Разделяем текст на блоки по категориям (iPhone, PS5, GamePad)
     category_pattern = re.compile(r"(?:📱|🎮)\s*([\w\s\d]+)", re.IGNORECASE)
-    blocks = category_pattern.finditer(text)
+    matches = list(category_pattern.finditer(text))
 
-    for m in blocks:
-        cat_name = m.group(1).strip().lower()  # категория в нижний регистр
+    for i, m in enumerate(matches):
+        cat_name = m.group(1).strip().lower()
         if cat_name not in DEFAULT_KEYS:
-            continue  # пропускаем несуществующие ключи
+            continue
 
         start = m.end()
-        # конец блока — либо до следующей категории, либо конец текста
-        next_m = next(category_pattern.finditer(text, start), None)
-        end = next_m.start() if next_m else len(text)
+        end = matches[i+1].start() if i+1 < len(matches) else len(text)
         block = text[start:end]
 
-        # Общий паттерн для всех форматов
+        # Универсальный паттерн для строк с ценой
         line_pattern = re.compile(
-            r"([🇪🇺🇯🇵🇨🇳]*)\s*([\w\s+/]+?)\s*(\d+(?:GB|TB)?)?\s*([^\–\-\n]+?)\s*[-–]\s*([\d\.,]+)",
+            r"([🇪🇺🇯🇵🇨🇳]*)\s*([\w\d\s+]+?)\s*(\d+(?:GB|TB)?)?\s*([^\-–\n]+?)\s*[-–]\s*([\d\.,]+)",
             re.UNICODE
         )
 
@@ -71,21 +69,23 @@ def parse_supplier_text(text: str):
             memory = pm.group(3) if pm.group(3) else "Стандарт"
             color = pm.group(4).strip()
             price_str = pm.group(5).replace(",", "").replace(".", "")
-            price_int = add_margin(int(price_str))
+            try:
+                price_int = add_margin(int(price_str))
+            except ValueError:
+                continue  # пропускаем некорректные строки
 
             sim_type = SIM_MAP.get(region_flag, "Обычная версия")
 
             data[cat_name][model_name][sim_type][memory].append(f"{color} – {price_int}₽")
 
     return data
-# ==================== Хендлеры ====================
 
+# -------------------- Хендлеры --------------------
 async def new_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
     global PRICES
-    PRICES = {key: defaultdict(lambda: defaultdict(list)) for key in DEFAULT_KEYS}
-    # Сохраняем пустой файл
+    PRICES = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
     with open(PRICES_FILE, "w", encoding="utf-8") as f:
         json.dump(PRICES, f, ensure_ascii=False, indent=2)
     await update.message.reply_text("Старый прайс очищен. Готов к новым данным.")
@@ -110,9 +110,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Объединяем с текущим прайсом
     for key in parsed:
-        for sim_type in parsed[key]:
-            for memory in parsed[key][sim_type]:
-                PRICES[key][sim_type][memory].extend(parsed[key][sim_type][memory])
+        for model_name in parsed[key]:
+            for sim_type in parsed[key][model_name]:
+                for memory in parsed[key][model_name][sim_type]:
+                    PRICES[key][model_name][sim_type][memory].extend(
+                        parsed[key][model_name][sim_type][memory]
+                    )
 
     # Сохраняем в файл
     with open(PRICES_FILE, "w", encoding="utf-8") as f:
@@ -137,8 +140,7 @@ async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(f"Текущий словарь PRICES:\n{json.dumps(PRICES, ensure_ascii=False, indent=2)}")
 
-# ==================== Запуск бота ====================
-
+# -------------------- Запуск бота --------------------
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("go", go))
