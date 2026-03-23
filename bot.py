@@ -59,12 +59,12 @@ def parse_supplier_text(text: str):
 
         # Универсальный паттерн для строк с ценой
         line_pattern = re.compile(
-            r"([🇪🇺🇯🇵🇨🇳]*)\s*"             # регион/флаг
-            r"([\w\s+]+?)"                     # модель (например 16e, 16 Plus)
-            r"(?:\s+(\d+(?:GB|TB)))?"          # память (опционально)
-            r"\s+([^\-–\n]+?)"                 # цвет/вариант
-            r"\s*[-–]\s*([\d\.,]+)",           # цена
-        re.UNICODE
+            r"([🇪🇺🇯🇵🇨🇳]?)\s*"       # флаг (опционально)
+            r"([A-Za-z\d\s+]+?)"        # модель (например 16e, 16 Plus)
+            r"(?:\s+(\d+(?:GB|TB)?))?"  # память (опционально)
+            r"\s+([^\-–\n]+?)"          # цвет/вариант
+            r"\s*[-–]\s*([\d\.,]+)",    # цена
+            re.UNICODE
         )
 
         for pm in line_pattern.finditer(block):
@@ -72,7 +72,7 @@ def parse_supplier_text(text: str):
             model_name = pm.group(2).strip().lower()
             memory = pm.group(3) if pm.group(3) else "Стандарт"
             color = pm.group(4).strip()
-            price_str = pm.group(5).replace(",", "").replace(".", "")
+            price_int = add_margin(int(pm.group(5).replace(",", "").replace(".", "")))
             try:
                 price_int = add_margin(int(price_str))
             except ValueError:
