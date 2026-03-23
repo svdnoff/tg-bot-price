@@ -1,6 +1,7 @@
 import re
 import json
 import os
+from collections import defaultdict
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -24,54 +25,73 @@ def add_margin(price: int) -> int:
         return price + 7000
 
 # Функция для парсинга текста поставщика
-def parse_supplier_text(text: str) -> dict:
-    """
-    Преобразует сообщения от поставщика в словарь вида:
-    {
-        "iphone 16": "📱 iPhone 16\n128GB — 80 000₽\n256GB — 90 000₽",
-        "iphone 16 pro": "📱 iPhone 16 Pro\n128GB — 105 000₽\n256GB — 115 000₽"
-    }
-    """
+def parse_supplier_text(text: str):
     result = {}
     current_model = None
-    lines = text.split("\n")
 
-    for line in lines:
+    # структура:
+    # model -> sim_type -> memory -> [строки]
+    data = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
+    for line in text.split("\n"):
         line = line.strip()
         if not line:
             continue
 
-        # Определяем новую модель
+        # новая модель
         if line.startswith("📱"):
-            current_model = line.replace("📱", "").strip().lower()  # "iphone 16"
-            result[current_model] = {}
+            current_model = line.replace("📱", "").strip()
             continue
 
-        # Парсим строки с ценой
-        match = re.search(r'(.+?)\s–\s([\d\.]+)₽', line)
-        if match and current_model:
-            spec = match.group(1).strip()  # "16e 128 Black ⚫"
-            price = int(match.group(2).replace(".", ""))
-            price = add_margin(price)
+        if not current_model:
+            continue
 
-            # Извлекаем память устройства
-            mem_match = re.search(r'(\d{3,4}GB|\d{2,3}|\d{1}TB)', spec)
-            memory = mem_match.group(1) if mem_match else spec
+        match = re.search(r'(🇪🇺|🇯🇵)\s(.+?)\s–\s([\d\.]+)₽', line)
+        if not match:
+            continue
 
-            # Добавляем в словарь модели
-            if memory not in result[current_model]:
-                result[current_model][memory] = price
-            else:
-                # Если несколько цен на один memory, берём минимальную
-                result[current_model][memory] = min(result[current_model][memory], price)
+        region = match.group(1)
+        spec = match.group(2)
+        price = match.group(3)
 
-    # Формируем готовый текст для каждой модели
+        # определяем тип сим
+        if region == "🇪🇺":
+            sim_type = "1 SIM + eSIM"
+        else:
+            sim_type = "Только eSIM, без физической!"
+
+        # память
+        mem_match = re.search(r'(\d{3,4}GB|\dTB)', spec)
+        if not mem_match:
+            continue
+
+        memory = mem_match.group(1)
+
+        # цвет (всё после памяти)
+        color = spec.split(memory)[-1].strip()
+
+        data[current_model][sim_type][memory].append(
+            f"{color} – {price}₽"
+        )
+
+    # собираем текст
     formatted = {}
-    for model, items in result.items():
-        text = f"📱 {model.title()}\n"
-        for mem, price in sorted(items.items()):
-            text += f"{mem} — {price:,}₽\n"
-        formatted[model] = text.strip()
+
+    for model in data:
+        text_out = f"📱 {model}:\n\n"
+
+        for sim_type in data[model]:
+            text_out += f"{sim_type}:\n\n"
+
+            for memory in data[model][sim_type]:
+                text_out += f"{memory}:\n"
+
+                for line in data[model][sim_type][memory]:
+                    text_out += f"{line}\n"
+
+                text_out += "\n"
+
+        formatted[model.lower()] = text_out.strip()
 
     return formatted
 
