@@ -35,57 +35,54 @@ def add_margin(price: int) -> int:
     return price + PRICE_INCREASE
 
 def parse_supplier_text(text: str):
-    """
-    Универсальный построчный парсер прайса.
-    Возвращает data[category][model][sim_type][memory] = [цвет – цена]
-    """
     data = {key: defaultdict(lambda: defaultdict(lambda: defaultdict(list))) for key in DEFAULT_KEYS}
+
+    pattern = re.compile(
+        r"([🇪🇺🇯🇵🇨🇳🇺🇸🇮🇳🇭🇰🇦🇪]?)\s*"  # флаг
+        r"([\w\s+]+?)\s+"                  # модель (16e / 16 Pro Max)
+        r"(\d+(?:GB|TB)?)\s+"              # память (128 / 256 / 1TB)
+        r"(.+?)\s*[-–]\s*"                 # цвет
+        r"([\d\.,]+)",                     # цена
+        re.UNICODE
+    )
 
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith("📱") or line.startswith("🎮") or "Заказать" in line:
+
+        if not line or "Заказать" in line:
             continue
 
-        # Паттерн: флаг (опционально), модель, память (опционально), цвет, цена
-        m = re.match(
-            r"([🇪🇺🇯🇵🇨🇳]?)\s*"      # флаг
-            r"([A-Za-z\d\s+]+?)\s*"    # модель / подмодель
-            r"(\d+(?:GB|TB)?)?\s*"     # память (опционально)
-            r"([^\-–]+?)\s*[-–]\s*"    # цвет/вариант
-            r"([\d\.,]+)",             # цена
-            line
-        )
+        m = pattern.search(line)
         if not m:
             continue
 
-        flag, model_name, memory, variant, price_str = m.groups()
-        model_name = model_name.strip().lower()
-        memory = memory if memory else "Стандарт"
-        variant = variant.strip()
-        try:
-            price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
-        except ValueError:
-            continue  # некорректная цена
+        flag, model_raw, memory, color, price_str = m.groups()
 
+        model_raw = model_raw.strip().lower()
+        memory = memory.replace("GB", "").replace("gb", "")
         sim_type = SIM_MAP.get(flag, "Обычная версия")
 
-        # Определяем категорию через DEFAULT_KEYS
-        category = None
-        for key in DEFAULT_KEYS:
-            if key in model_name:
-                category = key
-                break
-        if not category:
-            # Попробуем по первой цифре и ключевому слову
-            for key in DEFAULT_KEYS:
-                if key.split()[0] in model_name:
-                    category = key
-                    break
-        if not category:
-            continue  # не удалось определить категорию
+        price_int = add_margin(
+            int(price_str.replace(".", "").replace(",", ""))
+        )
 
-        # Добавляем в словарь
-        data[category][model_name][sim_type][memory].append(f"{variant} – {price_int}₽")
+        # нормализация модели
+        if model_raw.startswith("16e"):
+            category = "iphone 16e"
+        elif model_raw.startswith("16 pro max"):
+            category = "iphone 16 pro max"
+        elif model_raw.startswith("16 pro"):
+            category = "iphone 16 pro"
+        elif model_raw.startswith("16 plus"):
+            category = "iphone 16 plus"
+        elif model_raw.startswith("16"):
+            category = "iphone 16"
+        else:
+            continue
+
+        data[category][model_raw][sim_type][memory].append(
+            f"{color.strip()} – {price_int}₽"
+        )
 
     return data
 
