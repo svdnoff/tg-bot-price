@@ -59,8 +59,12 @@ def parse_supplier_text(text: str):
 
         # Универсальный паттерн для строк с ценой
         line_pattern = re.compile(
-            r"([🇪🇺🇯🇵🇨🇳]*)\s*([\w\d\s+]+?)\s*(\d+(?:GB|TB)?)?\s*([^\-–\n]+?)\s*[-–]\s*([\d\.,]+)",
-            re.UNICODE
+            r"([🇪🇺🇯🇵🇨🇳]*)\s*"             # регион/флаг
+            r"([\w\s+]+?)"                     # модель (например 16e, 16 Plus)
+            r"(?:\s+(\d+(?:GB|TB)))?"          # память (опционально)
+            r"\s+([^\-–\n]+?)"                 # цвет/вариант
+            r"\s*[-–]\s*([\d\.,]+)",           # цена
+        re.UNICODE
         )
 
         for pm in line_pattern.finditer(block):
