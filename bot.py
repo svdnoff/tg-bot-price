@@ -8,7 +8,6 @@ from rapidfuzz import fuzz
  
 # -------------------- Настройки --------------------
 TOKEN = os.environ.get("TOKEN")
-SECOND_BOT_CHAT_ID = int(os.environ.get("SECOND_BOT_CHAT_ID"))
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID"))
  
 SIM_MAP = {
@@ -127,29 +126,23 @@ def parse_supplier_text(text: str) -> dict:
         # Убираем цену из строки чтобы найти модель и память
         line_no_price = line[:price_match.start()].strip()
  
-        # Ищем объём памяти (число перед или без GB)
-        mem_match = memory_pattern.search(line_no_price)
+        # Ищем объём памяти — только стандартные значения
+        mem_match = re.search(r'\b(128|256|512|1024)\b', line_no_price)
         if not mem_match:
             continue
         memory = mem_match.group(1)
  
-        # Определяем категорию по модели
+        # Определяем категорию по модели (ВАЖНО: сначала длинные варианты)
         line_lower = line_no_price.lower()
         if "16e" in line_lower:
             category = "iphone 16e"
-        elif "16 pro max" in line_lower:
+        elif "16 pro max" in line_lower or "16pro max" in line_lower:
             category = "iphone 16 pro max"
-        elif "16pro max" in line_lower:
-            category = "iphone 16 pro max"
-        elif "16 pro" in line_lower:
+        elif "16 pro" in line_lower or "16pro" in line_lower:
             category = "iphone 16 pro"
-        elif "16pro" in line_lower:
-            category = "iphone 16 pro"
-        elif "16 plus" in line_lower:
+        elif "16 plus" in line_lower or "16plus" in line_lower:
             category = "iphone 16 plus"
-        elif "16plus" in line_lower:
-            category = "iphone 16 plus"
-        elif "16" in line_lower:
+        elif re.search(r'\b16\b', line_lower):
             category = "iphone 16"
         else:
             continue
@@ -178,8 +171,25 @@ def detect_brand(text: str):
                 return brand
     return None
  
-def detect_category(text: str, brand: str):
+def normalize_query(text: str) -> str:
+    """Заменяем русские варианты на английские для поиска по CATEGORY_MAP."""
+    replacements = {
+        "про макс": "pro max",
+        "promах":   "pro max",
+        "promax":   "pro max",
+        "про":      "pro",
+        "плюс":     "plus",
+        "макс":     "max",
+        "ультра":   "ultra",
+        "слим":     "slim",
+    }
     text = clean(text)
+    for ru, en in replacements.items():
+        text = text.replace(ru, en)
+    return text
+ 
+def detect_category(text: str, brand: str):
+    text = normalize_query(text)
     best_category = None
     best_score = 0
  
@@ -258,18 +268,6 @@ async def go(update: Update, context: ContextTypes.DEFAULT_TYPE):
     WRITE_MODE = True
     await update.message.reply_text("Режим записи включён. Отправляй прайс.")
  
-async def send_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ALLOWED_USER_ID:
-        return
-    global WRITE_MODE
-    WRITE_MODE = False
-    try:
-        with open(PRICES_FILE, "rb") as f:
-            await context.bot.send_document(chat_id=SECOND_BOT_CHAT_ID, document=f)
-        await update.message.reply_text("Прайс отправлен второму боту.")
-    except FileNotFoundError:
-        await update.message.reply_text("Прайс пустой, нечего отправлять.")
- 
 async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -315,16 +313,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
  
-    # Бренд найден, модель не распознана → показываем что есть в прайсе
-    available = [
-        cat_model
+    # Бренд найден, модель не распознана → ищем похожие варианты
+    query = normalize_query(text)
+    scored = [
+        (fuzz.partial_ratio(cat_model, query), cat_model, cat)
         for cat, (cat_brand, cat_model) in CATEGORY_MAP.items()
         if cat_brand == brand and cat in PRICES
     ]
-    if available:
-        examples = " / ".join(available)
+    scored.sort(reverse=True)
+    # Берём варианты с score > 40
+    suggestions = [cat_model for score, cat_model, cat in scored if score > 40]
+ 
+    if suggestions:
+        examples = "\n".join(f"• {m}" for m in suggestions[:3])
         await update.message.reply_text(
-            f"Уточни модель {brand.upper()} 📱\n\nДоступные варианты:\n{examples}",
+            f"Такой модели нет, проверьте правильность написания ❌\n\nВозможно вы имели в виду:\n{examples}",
+            reply_to_message_id=update.message.message_id
+        )
+    elif scored:
+        # Есть товары бренда, но ничего похожего
+        all_models = "\n".join(f"• {m}" for _, m, _ in scored)
+        await update.message.reply_text(
+            f"Такой модели нет, проверьте правильность написания ❌\n\nДоступные модели {brand.upper()}:\n{all_models}",
             reply_to_message_id=update.message.message_id
         )
     else:
@@ -338,7 +348,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("go", go))
-app.add_handler(CommandHandler("send", send_prices))
 app.add_handler(CommandHandler("test", test_prices))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
  
