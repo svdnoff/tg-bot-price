@@ -148,7 +148,10 @@ def parse_supplier_text(text: str) -> dict:
             continue
  
         # Цвет — всё что после объёма памяти до цены
-        color_part = line_no_price[mem_match.end():].strip().lstrip("GBgb").strip(" –-")
+        # Цвет: убираем "128GB" / "128" и всё до первой буквы цвета
+        after_mem = line_no_price[mem_match.end():]
+        after_mem = re.sub(r"^\s*(?:GB|gb)?\s*", "", after_mem)  # убираем "GB"
+        color_part = after_mem.strip().strip("–- ").strip()
         if not color_part:
             color_part = "—"
  
@@ -266,7 +269,14 @@ async def go(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     global WRITE_MODE
     WRITE_MODE = True
-    await update.message.reply_text("Режим записи включён. Отправляй прайс.")
+    await update.message.reply_text("Режим записи включён. Отправляй прайс. Когда закончишь — /done")
+ 
+async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        return
+    global WRITE_MODE
+    WRITE_MODE = False
+    await update.message.reply_text("Режим записи выключен. Бот готов отвечать пользователям ✅")
  
 async def test_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -348,6 +358,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("go", go))
+app.add_handler(CommandHandler("done", done))
 app.add_handler(CommandHandler("test", test_prices))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
  
