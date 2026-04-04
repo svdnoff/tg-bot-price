@@ -14,11 +14,10 @@ ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID"))
 SIM_MAP = {
     "🇨🇳": "2 SIM (физические)",
     "🇭🇰": "2 SIM (физические)",
-
     "🇮🇳": "1 SIM + eSIM",
     "🇯🇵": "1 SIM + eSIM",
     "🇦🇪": "1 SIM + eSIM",
-
+    "🇪🇺": "1 SIM + eSIM",
     "🇺🇸": "Только eSIM (без физической SIM)",
 }
  
@@ -54,7 +53,7 @@ CATEGORY_MAP = {
 SIM_ORDER = [
     "1 SIM + eSIM",
     "2 SIM (физические)",
-    "Только eSIM, без физической!",
+    "Только eSIM (без физической SIM)",
     "Обычная версия",
 ]
  
@@ -96,44 +95,72 @@ def parse_price_from_entry(entry: str) -> int:
 def parse_supplier_text(text: str) -> dict:
     result = {}
  
-    pattern = re.compile(
-        r"([🇪🇺🇯🇵🇨🇳🇺🇸🇮🇳🇭🇰🇦🇪]?)\s*"
-        r"([\w\s+]+?)\s+"
-        r"(\d+(?:GB|TB)?)\s+"
-        r"(.+?)\s*[-–]\s*"
-        r"([\d\.,]+)",
-        re.UNICODE
-    )
+    # Числа в цене: 49.200 или 49,200 или 49200
+    price_pattern = re.compile(r"[-–]\s*([\d][.\d,]+)", re.UNICODE)
+    memory_pattern = re.compile(r"\b(\d+)\s*(?:GB|gb)?\b")
  
     for line in text.splitlines():
         line = line.strip()
         if not line or "Заказать" in line:
             continue
  
-        m = pattern.search(line)
-        if not m:
+        # Определяем флаг по началу строки
+        flag = ""
+        for f in SIM_MAP:
+            if line.startswith(f):
+                flag = f
+                line = line[len(f):].strip()
+                break
+ 
+        sim_type = SIM_MAP.get(flag, "Обычная версия")
+ 
+        # Ищем цену
+        price_match = price_pattern.search(line)
+        if not price_match:
+            continue
+        price_str = price_match.group(1).replace(".", "").replace(",", "")
+        try:
+            price_int = add_margin(int(price_str))
+        except ValueError:
             continue
  
-        flag, model_raw, memory, color, price_str = m.groups()
-        model_raw = model_raw.strip().lower()
-        memory = memory.replace("GB", "").replace("gb", "")
-        sim_type = SIM_MAP.get(flag, "Обычная версия")
-        price_int = add_margin(int(price_str.replace(".", "").replace(",", "")))
+        # Убираем цену из строки чтобы найти модель и память
+        line_no_price = line[:price_match.start()].strip()
  
-        if model_raw.startswith("16e"):
+        # Ищем объём памяти (число перед или без GB)
+        mem_match = memory_pattern.search(line_no_price)
+        if not mem_match:
+            continue
+        memory = mem_match.group(1)
+ 
+        # Определяем категорию по модели
+        line_lower = line_no_price.lower()
+        if "16e" in line_lower:
             category = "iphone 16e"
-        elif model_raw.startswith("16 pro max"):
+        elif "16 pro max" in line_lower:
             category = "iphone 16 pro max"
-        elif model_raw.startswith("16 pro"):
+        elif "16pro max" in line_lower:
+            category = "iphone 16 pro max"
+        elif "16 pro" in line_lower:
             category = "iphone 16 pro"
-        elif model_raw.startswith("16 plus"):
+        elif "16pro" in line_lower:
+            category = "iphone 16 pro"
+        elif "16 plus" in line_lower:
             category = "iphone 16 plus"
-        elif model_raw.startswith("16"):
+        elif "16plus" in line_lower:
+            category = "iphone 16 plus"
+        elif "16" in line_lower:
             category = "iphone 16"
         else:
             continue
  
-        entry = f"{color.strip()} – {price_int}₽"
+        # Цвет — всё что после объёма памяти до цены
+        color_part = line_no_price[mem_match.end():].strip().lstrip("GBgb").strip(" –-")
+        if not color_part:
+            color_part = "—"
+ 
+        price_formatted = f"{price_int}₽"
+        entry = f"{color_part} – {price_formatted}"
         deep_set(result, [category, sim_type, memory], [entry])
  
     return result
