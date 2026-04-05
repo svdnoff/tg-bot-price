@@ -185,20 +185,19 @@ def extract_memory(line: str):
     slash_match = re.search(r'\d+\s*/\s*(\d+[Tt][Bb]|\d+)', line)
     if slash_match:
         rom = slash_match.group(1)
-        # Нормализуем TB
         rom_norm = re.sub(r'(?i)tb', 'TB', rom)
         if 'TB' in rom_norm:
             tb_num = re.match(r'(\d+)', rom_norm).group(1)
             return tb_num + 'TB', slash_match
         return rom_norm, slash_match
 
-    # Формат TB: 1TB, 2TB
-    tb_match = re.search(r'\b([12])TB\b', line, re.IGNORECASE)
+    # TB форматы: 1TB, 2TB, 1Tb итд
+    tb_match = re.search(r'\b([12])\s*[Tt][Bb]\b', line)
     if tb_match:
         return tb_match.group(1) + 'TB', tb_match
 
-    # Обычный формат: 128, 256, 512, 1024 (с GB или без)
-    mem_match = re.search(r'\b(128|256|512|1024)\b', line)
+    # Обычный формат: 128GB, 256GB, 512GB, 128, 256 итд
+    mem_match = re.search(r'\b(128|256|512|1024)\s*(?:GB|gb)?', line)
     if mem_match:
         return mem_match.group(1), mem_match
 
@@ -373,7 +372,12 @@ def format_price_response(category: str, prices: dict) -> str:
 
         lines.append("")
 
-    return "\n".join(lines).strip()
+    footer = (
+        "\n\n💬 Цены могут немного отличаться в зависимости от цвета.\n"
+        "Для заказа и точной информации — @DrygoeMesto23\n"
+        "Также привезём часы, PS5 и многое другое 🎮⌚"
+    )
+    return "\n".join(lines).strip() + footer
 
 # -------------------- Хендлеры --------------------
 
