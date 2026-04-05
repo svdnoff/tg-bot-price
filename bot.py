@@ -31,7 +31,7 @@ THRESHOLD = 85
 
 BRANDS = {
     "iphone":  ["iphone", "айфон", "эпл", "apple"],
-    "samsung": ["samsung", "самсунг", "самс"],
+    "samsung": ["samsung", "самсунг", "самс", "санг"],
     "ps5":     ["ps5", "пс5", "плойка", "playstation"],
     "gamepad": ["gamepad", "геймпад", "джойстик"],
 }
@@ -208,7 +208,7 @@ def parse_supplier_text(text: str) -> dict:
     result = {}
 
     # Паттерн цены: – 49.200₽  или  – 49.200  или  -22000  или  -22000₽
-    price_pattern = re.compile(r'[-–]\s*([\d][.\d,]+)\s*₽?(?:\s|$)', re.UNICODE)
+    price_pattern = re.compile(r'[-–]\s*([\d][.\d,]+)\s*₽?', re.UNICODE)
 
     for line in text.splitlines():
         line = line.strip()
@@ -245,10 +245,10 @@ def parse_supplier_text(text: str) -> dict:
         line_no_price = line[:price_match.start()].strip()
         line_lower = line_no_price.lower()
 
-        # Определяем бренд и категорию
-        category = detect_iphone_category(line_lower)
+        # Определяем бренд и категорию (Samsung первым — иначе A17/S17 матчится как iPhone 17)
+        category = detect_samsung_category(line_lower)
         if not category:
-            category = detect_samsung_category(line_lower)
+            category = detect_iphone_category(line_lower)
         if not category:
             continue
 
@@ -288,14 +288,25 @@ def detect_brand(text: str):
 def normalize_query(text: str) -> str:
     """Переводим русские варианты в английские."""
     replacements = {
+        # iPhone
         "про макс": "pro max",
         "про":      "pro",
         "плюс":     "plus",
         "макс":     "max",
-        "ультра":   "ultra",
-        "слим":     "slim",
         "мини":     "mini",
+        "слим":     "slim",
+        # Samsung
+        "ультра":   "ultra",
         "фе":       "fe",
+        "а17":      "a17",
+        "а36":      "a36",
+        "а56":      "a56",
+        "с25 ультра": "s25 ultra",
+        "с25 фе":   "s25 fe",
+        "с25":      "s25",
+        "с26 ультра": "s26 ultra",
+        "с26 плюс": "s26 plus",
+        "с26":      "s26",
     }
     text = clean(text)
     for ru, en in replacements.items():
