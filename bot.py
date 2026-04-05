@@ -373,15 +373,35 @@ def format_price_response(category: str, prices: dict) -> str:
         lines.append("")
 
     footer = (
-        "\n\n💬 Цены могут немного отличаться в зависимости от цвета, для заказа и вопросов напишите нам:\n"
-        "@DrygoeMesto23\n"
-        "Также можем привезти часы, PS5 и многое другое 🎮⌚"
+        "\n\n💬 Цены могут немного отличаться в зависимости от цвета.\n"
+        "Для заказа и точной информации — @DrygoeMesto23\n"
+        "Также привезём часы, PS5 и многое другое 🎮⌚"
     )
     return "\n".join(lines).strip() + footer
 
 # -------------------- Хендлеры --------------------
 
 PRICES = load_prices()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "👋 Привет! Я бот магазина *DrygoeMesto* — помогу узнать актуальные цены на технику.\n\n"
+        "📱 *Что я умею:*\n"
+        "Просто напиши название устройства — и я покажу цены по всем доступным версиям и объёмам памяти.\n\n"
+        "✏️ *Примеры запросов:*\n"
+        "• Айфон 16 про макс\n"
+        "• iPhone 15\n"
+        "• Samsung S25 Ultra\n"
+        "• С26 ультра\n"
+        "• А56\n\n"
+        "📊 *Что покажу в ответе:*\n"
+        "Минимальную цену для каждого объёма памяти, разбитую по типу SIM-карты "
+        "(1 SIM + eSIM, 2 SIM, только eSIM).\n\n"
+        "💬 *Хочешь заказать или уточнить цвет/наличие?*\n"
+        "Пиши напрямую — @DrygoeMesto23, всё решим 🤝\n\n"
+        "⌚🎮 Также привозим Apple Watch, PS5 и другую технику — спрашивай!"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def new_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
@@ -481,6 +501,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------- Запуск --------------------
 
 app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("new", new_prices))
 app.add_handler(CommandHandler("go", go))
 app.add_handler(CommandHandler("done", done))
